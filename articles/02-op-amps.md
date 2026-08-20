@@ -231,6 +231,81 @@ Note what is absent from this list: open-loop gain. The difference between 10⁵
 2 × 10⁵ changes the closed-loop gain of a typical pedal stage by a fraction of a
 percent. It is the parameter most often quoted and among the least audible.
 
+### Does an op-amp have a sound?
+
+Builders argue about this more than about any other component in a pedal, and the
+argument is usually conducted as though there were one answer. There isn't. The question
+is well-posed only once you say which *region of operation* you mean, and the answer
+flips completely between two of them.
+
+**In the linear region, the op-amp is very nearly a wire with gain.** That is not a
+criticism, it is the entire purpose of feedback. With 60 dB of loop gain the closed-loop
+response is set by the feedback network's resistor ratios to within about 0.1%. The
+op-amp's own open-loop gain, its offset, its input impedance — all of it is divided down
+by the loop until it disappears beneath the passives.
+
+And the passives are not precise. A real pedal contains:
+
+| Component | Real spread |
+|---|---|
+| Resistors | 1–5% |
+| Film capacitors | 5–20% |
+| Ceramic capacitors | often −20/+80% |
+| Pots | ±20%, plus taper variation |
+| Supply | 9 V nominal; ~9.6 V fresh, ~7.5 V dying |
+
+A ±20% capacitor moves a filter corner further than any two op-amps differ in the linear
+region. So a model that gets the op-amp exactly right inside a circuit whose capacitors
+are ±20% has optimised the term that was never dominant. **This is the tolerance floor,
+and in the linear region op-amp differences sit below it.**
+
+Push the same stage into its rails and every one of the following wakes up.
+
+#### Four channels through which an op-amp does change the sound
+
+**1. Output swing capability.** On a 9 V supply this is first-order. A 741-class part
+cannot get within roughly 1.5 V of either rail; a rail-to-rail part gets within 100 mV.
+That is about 2.5 V of usable swing out of a 9 V budget — on the order of 8 dB of
+headroom. It changes where clipping begins and how much clean range exists before it.
+Wholly a property of the part, and wholly documented.
+
+**2. Input bias current against high-value resistors.** A bipolar-input part drawing
+~80 nA through a 1 MΩ bias resistor develops 80 mV of offset. That shifts the operating
+point off centre, so the positive and negative halves of the waveform clip at *different*
+levels. Asymmetric clipping means even-order harmonics — a difference in character, not
+just in level. A FET-input part with picoamp bias current does not do this.
+
+**3. Clipping behaviour, when the op-amp is the clipper.** Where the rails sit, how
+abruptly the output stage meets them, whether the limit is symmetric, and how the stage
+recovers afterwards. Part-dependent throughout, and the recovery component is the one
+item on this list that no datasheet states.
+
+**4. Running out of loop gain.** In a high-gain stage, a 1 MHz gain-bandwidth part has
+far less loop gain at 5 kHz than a 10 MHz part. Less loop gain means the closed-loop
+behaviour starts depending on the op-amp again, and the stage's distortion rises with
+frequency. In a low-gain stage there is ample margin and this never engages — which is
+precisely why the same swap is audible in one circuit and inaudible in another.
+
+Smaller but real: input-referred noise in high-gain stages, and marginal stability — a
+part that is not comfortable in a given topology can add high-frequency hash, which
+listeners hear and describe as harshness.
+
+#### The useful form of the claim
+
+Neither "all op-amps sound the same" nor "op-amps have a sound" can be tested as stated.
+This can:
+
+| Circuit | Prediction |
+|---|---|
+| Buffer, clean EQ, unity-gain filter | **Inaudible.** The op-amp is a wire with gain; the passives dominate. |
+| Feedback clipper at moderate gain | **Small.** Diodes conduct before the op-amp reaches its rails and loop gain is ample. What difference exists arrives through offset asymmetry and headroom, not through tone. |
+| High-gain stage, op-amp as the clipper, 9 V rail | **Clearly audible.** Headroom, symmetry and recovery all in play. |
+| Any of the above on a dying battery | **Amplified.** Swing differences matter more as the rail shrinks. |
+
+Stated that way the claim is falsifiable, which makes it worth publishing. It also tells
+you where to spend modeling effort: rung 0 is not laziness in row one, and rung 3 is not
+optional in row three.
+
 ### The real-time compromise
 
 | | Offline SPICE | Real-time audio |

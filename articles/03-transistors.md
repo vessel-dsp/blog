@@ -194,6 +194,123 @@ roughly in order of audible cost:
    *sampling* artefact with no analogue in the physical device, and it is the one error
    on this list that gets worse the harder you drive the circuit.
 
+### Does a transistor have a sound?
+
+Yes, and much more so than an op-amp — for a reason that inverts the argument entirely.
+
+An op-amp sits inside a feedback loop whose job is to make the device irrelevant, and it
+succeeds: in the linear region an op-amp's parameter spread is smaller than the ±20%
+capacitors around it, so it disappears beneath the passives. A discrete transistor stage
+has no such loop. There is local feedback at best, often none, and **the transistor
+participates in setting its own bias point.** Device parameters propagate straight to the
+output.
+
+Then compare the spreads:
+
+| Parameter | Real spread |
+|---|---|
+| Silicon small-signal current gain | 100–300, a **3:1** range |
+| Germanium current gain | wider still, and specimen-dependent |
+| Germanium leakage | orders of magnitude, and temperature-dependent |
+| JFET pinch-off voltage | e.g. −0.3 V to −1.5 V for one common part |
+| JFET saturation current | e.g. 0.2 mA to 1.0 mA for the same part |
+| Resistors | 1–5% |
+| Capacitors | 5–20%, worse for ceramics |
+
+No passive component in a pedal has a 3:1 tolerance. **The transistor's own spread is the
+dominant variation in the circuit**, which is the exact opposite of the op-amp case.
+
+The market settled this question before the theory did: fuzz builders measure current
+gain and leakage, grade transistors into bins, and sell matched pairs at a premium.
+Nobody sells graded op-amps.
+
+#### Six channels through which a transistor changes the sound
+
+**1. Bias point, via current gain.** This is the big one, and it is a structural
+difference from the op-amp case rather than a difference of degree. In a two-transistor
+fuzz the collector voltage of the second stage depends on the current gain of *both*
+devices together with the bias resistor. Swap either transistor and the operating point
+moves — which changes gain, headroom, clipping symmetry and compression all at once, from
+one parameter. This is why builders tune the bias resistor per transistor pair rather
+than building to the schematic value.
+
+**2. Turn-on voltage: germanium against silicon.** Roughly 0.2–0.3 V versus 0.6–0.7 V.
+That is not just a level offset. It sets how much signal is required to bring the stage
+into conduction, and therefore how the pedal responds to the guitar's volume control. The
+much-described behaviour where a germanium fuzz cleans up as you roll back the guitar
+volume is this parameter, working as designed.
+
+**3. Leakage, in germanium.** Collector-base leakage flows out through the base bias
+network and sets the operating point independently of any signal. It varies enormously
+between specimens and it changes with temperature. That is why germanium fuzz drifts as a
+room warms up, why the same pedal behaves differently on a cold stage, and why leakage is
+measured and graded alongside gain. Silicon has effectively none of this.
+
+**4. Current gain at the *actual* operating current.** Gain is not a constant. It rolls
+off at low current through recombination and at high current through the knee effect, and
+a fuzz circuit typically runs its transistors at collector currents far below the point
+where the datasheet specifies gain. Two transistors that match at 1 mA can diverge badly
+at 10 µA. This is a rung-3 effect that is genuinely audible in low-current circuits, and
+it is invisible to any model that treats gain as a single number.
+
+**5. Junction capacitance and bandwidth.** Collector-base capacitance, multiplied by the
+Miller effect, rolls off the top end. A low-cutoff-frequency germanium part is darker
+than a modern silicon part in the same socket. A meaningful portion of "germanium sounds
+warmer" is literally bandwidth, and it is measurable rather than mystical.
+
+**6. Clipping symmetry.** A common-emitter stage clips by cutoff on one half of the
+waveform and by saturation on the other, and the two do not arrive at the same input
+level. Where each occurs depends on the bias point, which depends on channel 1. So the
+even-order content of the distortion is transistor-dependent, not just circuit-dependent.
+
+#### JFETs and MOSFETs specifically
+
+**JFETs vary so widely that a fixed-value circuit is a lottery.** Pinch-off voltage and
+saturation current commonly span a factor of three to five within one part number, which
+is why JFET stages usually carry a trim pot. A JFET stage built to nominal values and not
+trimmed can land anywhere from barely conducting to fully open.
+
+**The square law is a real reason JFET stages sound tube-like**, not marketing. A triode's
+plate current follows roughly a three-halves power of its grid drive; a JFET follows a
+square law; a BJT follows an exponential. The JFET genuinely sits between the other two,
+so its compression and its harmonic ordering resemble a triode's more closely than a
+BJT's does. This is a structural argument, and it is checkable.
+
+**MOSFETs as clipping elements give square-law limiting** rather than the exponential
+limiting a diode gives, so the knee is shaped differently even at the same threshold.
+Threshold spread across specimens is again large.
+
+#### The useful form of the claim
+
+| Circuit | Prediction |
+|---|---|
+| Emitter follower / buffer | **Nearly inaudible.** Local feedback near unity gain swamps the device. |
+| Single-stage boost at low gain | **Small but real.** Bandwidth and bias, mostly. |
+| Two-transistor fuzz | **Large.** Bias, gain, leakage and turn-on all in play. Two units of the *same part number* are audibly different. |
+| Any germanium circuit, as the room temperature changes | **Large and moving.** Leakage sets the operating point. |
+| Untrimmed JFET stage | **Large, and partly random.** The specimen decides. |
+| Multi-stage cascade with diode clippers between stages | **Moderate.** Diodes clip before the devices do and inter-stage filtering masks detail — the same masking that makes op-amp swaps small. |
+
+That last row is worth noticing, because it is the op-amp argument reappearing in
+transistor clothing: **whenever something else in the circuit clips first, the active
+device's own character stops mattering.** Topology decides how much the part matters, in
+both articles, for the same reason.
+
+#### What this means for modeling
+
+The op-amp conclusion was that a datasheet is enough. The transistor conclusion is the
+opposite: **a datasheet-typical model describes a pedal that nobody owns.**
+
+If the transistor's spread dominates the circuit, then a single typical value cannot
+represent it, and a model built on typical values is describing the centre of a
+distribution rather than any real unit. The honest options are to model a *band* rather
+than a point, to model a specific graded specimen and say which, or to state the claim at
+family level — germanium versus silicon — where the difference is large enough that the
+spread does not swallow it.
+
+Claiming per-part-number accuracy for a transistor is claiming more than the parts
+support.
+
 ### The real-time compromise
 
 Offline simulation and real-time simulation are the same mathematics under opposite

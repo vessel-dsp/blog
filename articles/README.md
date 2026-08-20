@@ -17,7 +17,7 @@ Sequenced by modeling difficulty, not by importance — each article assumes the
 |---|---|---|---|
 | 01 | [Diodes](01-diodes.md) | Silicon, germanium, Schottky, LED, zener | placeholder |
 | 02 | [Op-amps](02-op-amps.md) | Macro-modelled gain blocks | placeholder |
-| 03 | [Transistors](03-transistors.md) | BJT, JFET, MOSFET | **draft — engine reviewed 2026-08-20** |
+| 03 | [Transistors](03-transistors.md) | BJT, JFET, MOSFET | draft |
 | 04 | [Tubes](04-tubes.md) | Triodes, power tubes, rectifiers | placeholder |
 
 Diodes come first because a diode is the smallest complete nonlinearity: one equation, two terminals, and it already forces every hard decision — iteration, damping, oversampling. Tubes come last because they need all of it plus a fitted 2D surface.

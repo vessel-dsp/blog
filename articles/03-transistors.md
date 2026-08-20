@@ -1,274 +1,298 @@
 ---
 title: Transistors
-status: draft — reviewed against the engine, not yet measurement-backed
-reviewed: 2026-08-20
-source: workbench v2 compiler + runtime
-tier: whitebox (compact MNA)
+status: draft
+sections: introduction / how to model it / visualization / audio simulation
 ---
 
 # Transistors
 
 Three devices share one slot in a circuit, and almost nothing else about them is the
-same. This article covers how all three are actually modelled — not how they could be.
+same. This article is about what a transistor actually does, what a circuit simulator
+does instead, and how wide the gap between those two is.
 
-Everything below was read out of the v2 compiler (`src/compiler/`) and runtime
-(`src/runtime/reference-runtime.ts`, `src/dsp/WhiteBoxEngine.cpp`) on 2026-08-20.
-Where the engine does something incomplete, this says so.
+The gap is the whole subject. Every audio simulation of a transistor is an
+approximation — there is no version where it isn't — so the useful question is never
+"is this accurate?" but "which approximation is this, and what did it drop?"
 
 ---
 
 ## Introduction
 
 **BJT — current-controlled.** The fuzz device. Fuzz Face, Tone Bender, Big Muff,
-Rangemaster. Germanium versus silicon here is not a subtle swap: leakage and
-temperature drift are part of the sound, and germanium's saturation current sits
-about five orders of magnitude from silicon's.
+Rangemaster. Germanium versus silicon is not a subtle swap here: the two differ in
+saturation current by about five orders of magnitude, which is roughly 0.3 V of
+base-emitter bias, and germanium's leakage is large enough to set the operating point
+by itself.
 
 **JFET — voltage-controlled, depletion mode.** Conducts with no gate bias and pinches
 off as the gate goes negative, so its threshold is *negative*. Used to imitate tube
-stages and as an analogue switch. J201 and 2N5457 are the pedal staples, and their
-part-to-part spread is famously wide — the registry puts 2N5457's β between
-2.78 × 10⁻⁵ and 2.0 × 10⁻², a factor of 720.
+stages and as an analogue switch. Its part-to-part spread is famously wide — a
+datasheet transconductance range spanning two orders of magnitude is normal.
 
 **MOSFET — voltage-controlled, enhancement mode.** Off at zero bias, so its threshold
-is *positive*. Clipping element, boost stage, CMOS-inverter analogue stage.
+is *positive*. Insulated gate, so no DC gate current at all. Clipping element, boost
+stage, CMOS-inverter analogue stage.
 
-Why the model matters: a transistor stage's bias point determines almost everything
-audible about it, and bias is exactly what a careless model gets wrong. A Fuzz Face
-biased right and a Fuzz Face biased wrong are different pedals.
+Why any of this matters to what you hear: a transistor stage's **bias point** determines
+almost everything audible about it, and bias is exactly what a careless model gets
+wrong. A Fuzz Face biased right and a Fuzz Face biased wrong are different pedals, not
+the same pedal with a different knob setting.
 
 ---
 
 ## How to model it
 
-### The BJT: Ebers-Moll, transport form
+### The ceiling: what the device really is
 
-The runtime linearises about the previous Newton iterate. Forward and reverse
-transport currents:
+The physically honest description of a transistor is not an equation, it is a
+boundary-value problem. Carrier transport through doped semiconductor is governed by
+Poisson's equation coupled to the electron and hole continuity equations:
+
+```
+∇·(ε∇ψ) = −q(p − n + N_D − N_A)
+∂n/∂t = (1/q)∇·J_n + G − R
+∂p/∂t = −(1/q)∇·J_p + G − R
+```
+
+Solving that means meshing the actual physical device in two or three dimensions and
+stepping the mesh through time, with carrier statistics, generation and recombination,
+field-dependent mobility, doping profiles, and self-heating. This is what TCAD does, and
+it is the closest thing to ground truth a simulator can reach.
+
+It is also completely unusable for audio. A single transient of a single transistor is
+minutes to hours of compute. A four-transistor fuzz at 44.1 kHz needs 44,100 solved
+circuit states *per second of audio*, and each of those needs several nonlinear
+iterations over the whole circuit.
+
+So the first thing to understand about transistor modeling is that **the ideal
+simulation is not merely expensive, it is off by ten or more orders of magnitude.**
+Everything below is a chain of deliberate retreats from it.
+
+### What MNA actually does
+
+Circuit simulators do not solve device physics. They solve a network.
+
+**Modified Nodal Analysis** writes Kirchhoff's current law at every node. For a circuit
+of *n* nodes that is *n* equations in *n* unknown node voltages, assembled as a matrix.
+Each component "stamps" its contribution:
+
+- A resistor of conductance `G` between nodes `a` and `b` adds `+G` at `(a,a)` and
+  `(b,b)` and `−G` at `(a,b)` and `(b,a)`. That is the entire resistor.
+- A voltage source cannot be written as a current, so MNA adds an extra unknown for its
+  branch current and an extra row — the "modified" in the name.
+- A capacitor is not an algebraic element at all. It becomes a **companion model**: a
+  conductance plus a current source whose values depend on the timestep and the
+  capacitor's previous state. Trapezoidal integration gives `G = 2C/Δt`; backward Euler
+  gives `C/Δt`. The choice of integration rule is a modeling decision with audible
+  consequences, and the companion conductance scales with sample rate.
+
+Everything linear is now one matrix solve. The transistors are the problem.
+
+### Nonlinear devices: Newton-Raphson and companion models
+
+A transistor's current is an exponential or a square law of its terminal voltages, so it
+cannot be stamped as a constant. The standard answer is to linearise it about a guess
+and iterate:
+
+1. Guess the node voltages.
+2. For each nonlinear device, evaluate its current at the guess and its derivatives
+   (`gm`, `gds`, `gπ`, …) — the local slopes.
+3. Stamp those slopes as conductances, plus a current source correcting for the
+   difference between the linear approximation and the true current.
+4. Solve the matrix. Get a new guess.
+5. Repeat until the change between iterations falls below tolerance.
+
+That is Newton-Raphson applied to the whole circuit at once, and the "companion model"
+is just the tangent line to the device's characteristic at the current guess.
+
+**It does not converge on its own.** An exponential's derivative grows as fast as the
+exponential, so an early guess that is 0.2 V too high produces a correction hundreds of
+times too large, which produces a worse guess. Real simulators need help:
+
+- **Junction limiting** — clamp how far a junction voltage may move per iteration. This
+  is not optional; without it high-gain circuits simply never converge.
+- **gmin stepping** — add a tiny conductance across every junction, solve, then shrink it
+  toward zero. Keeps the matrix non-singular when everything is cut off.
+- **Source stepping** — ramp the supplies up from zero, using each solution as the seed
+  for the next.
+- **Pseudo-transient** — solve a fictitious transient to steady state instead of solving
+  DC directly.
+
+Limiting has its own failure mode, and it is worth knowing about because it is
+counter-intuitive: a limiter can clamp an iterate to the *same value* twice in a row.
+The iteration is then simultaneously stationary and flagged as damped — a converged
+answer that the convergence test refuses to accept, because "was limited" usually means
+"is not converged". Circuits can stall there for every sample of a render while the
+underlying numbers are already correct.
+
+### Compact models: the retreat, in rungs
+
+Between "one exponential" and "mesh the silicon" there is a well-worn ladder. Each rung
+adds physics and costs both parameters and time.
+
+| Rung | BJT | FET | What it buys |
+|---|---|---|---|
+| 0 | static transfer curve | static transfer curve | Nothing electrical. A waveshaper cannot load its source or interact with its circuit. |
+| 1 | ideal switch / fixed Vbe drop | ideal switch | Topology only. Bias is wrong, so tone is wrong. |
+| 2 | **Ebers-Moll** (Is, βf, βr) | **Shichman-Hodges** (Vth, β, λ) | Correct bias and correct large-signal shape. The workhorse. |
+| 3 | **Gummel-Poon** | MOS level 2/3 | Beta rolloff at high current (knee) and low current (recombination), Early effect, junction capacitances, base resistance modulation. Level- and frequency-dependence become right. |
+| 4 | **VBIC / HICUM / MEXTRAM** | **BSIM** | Self-heating, avalanche, distributed and quasi-saturation effects. Dozens to hundreds of parameters. |
+| 5 | drift-diffusion TCAD | drift-diffusion TCAD | The physics. Unusable in a circuit loop. |
+| — | **a real transistor on a bench** | — | Above every rung: a specific specimen, at a specific temperature, in a specific layout, with its own stray capacitance. |
+
+Ebers-Moll in transport form is three parameters and two exponentials:
 
 ```
 Ift = Is · (exp(Vbe / Vt) − 1)
 Irt = Is · (exp(Vbc / Vt) − 1)
 
-Ic  = Ift − Irt · (1 + 1/βr) − Ileak
-Ib  = Ift/βf + Irt/βr + Ileak
+Ic  = Ift − Irt · (1 + 1/βr)
+Ib  = Ift/βf + Irt/βr
 ```
 
-PNP is handled by negating both junction voltages rather than by a second code path,
-so there is one model and one sign convention.
-
-**Germanium leakage is the same shape, not a new mechanism.** Ebers-Moll already has a
-reverse current — about 1 nA at the saturation currents these packets declare — but a
-real germanium part leaks 100 to 1000 times that. So the model adds a larger prefactor
-on the same `exp(Vbc/Vt) − 1` term: zero at zero bias, saturating at `−Ileak` under
-reverse bias, exactly as a junction does. It touches base and collector only, because
-collector-base leakage is measured with the emitter open.
-
-That detail is the reason germanium fuzz drifts with temperature: **the leakage current
-flows out through the base bias resistor and sets the operating point.** Model the
-leakage and you get the drift for free. Omit it and you get a germanium pedal that
-behaves like a silicon one.
-
-**Darlingtons get one trick instead of two transistors.** A Darlington's external Vbe is
-the sum of two junction drops (~1.3 V) and its effective β is the product of two
-internal βs. Rather than stamping two devices, the engine multiplies the thermal voltage
-by `darlingtonStages`, so the same Ic requires `stages × Vbe_single`. One registry part
-uses it: MPSA13.
-
-### The FET: Shichman-Hodges, both channels, both directions
+Shichman-Hodges is the FET counterpart, one square law in two regions:
 
 ```
-cutoff       drive = Vgs − Vth ≤ 0   →  I = 0, gds = 1e-12
+cutoff       drive = Vgs − Vth ≤ 0   →  I = 0
 triode       Vds < drive             →  I = β·Vds·(2·drive − Vds)·(1 + λ·Vds)
 saturation   Vds ≥ drive             →  I = β·drive²·(1 + λ·Vds)
 ```
 
-A p-channel device is the same equations with every voltage negated — again one model,
-not a mirrored copy.
+For guitar circuits, rung 2 is usually enough to get the *character* right and rung 3 is
+where the *detail* lives. Rung 4 and above buy things that matter for RF and IC design
+and almost nothing a guitarist can hear — with one exception, self-heating, which is
+audible in germanium.
 
-**A channel conducts both ways, and the engine used to get this wrong.** An earlier
-version treated `Vds < 0` as cutoff, so a FET with its drain below its source was fully
-off. A real channel is symmetric: with the gate on, current flows source-to-drain just
-as happily — which is precisely why a JFET works as an analogue switch. The fix follows
-ngspice's MOS level 1 and swaps the two terminals, evaluating the forward law at
-`(Vgs − Vds, −Vds)` and negating its current. By the chain rule that gives
-`gm' = −gm` and `gds' = gm + gds`.
+### Where realism actually leaks
 
-The cost of getting it wrong was not subtle, because an audio signal spends half its
-cycle there. On `boss-hm-2`, three of four FETs sat at negative Vds with positive
-overdrive for **900, 1503 and 1831 of 2400 samples**, all three in the signal path.
-The runtime opened them while ngspice passed signal: **corr = 0.5448, gain = 0.238** —
-ten times too quiet. It was the corpus's last parity disagreement, found only after
-window, timestep, op-amp knee, self-oscillation and the diode clamp had each been ruled
-out.
+Knowing the rungs is not the same as knowing which omission you will hear. Six leaks,
+roughly in order of audible cost:
 
-### Two implementations, and they are not the same fidelity
+1. **Bias, not waveform.** Get the saturation current wrong by the germanium-to-silicon
+   distance and base-emitter turn-on moves by about 0.3 V. A germanium bias network
+   evaluated with silicon parameters never turns on at all, and the stage renders near
+   silence. This is the single largest error mode in transistor modeling, and it is a
+   *parameter* error, not a *model* error.
+2. **Level, not shape.** Correlation against a reference is easy to score well on;
+   matching gain is much harder. A model can reproduce the waveform faithfully and still
+   be 10 dB off, and correlation cannot see that at all, because scaling a signal does
+   not change its shape.
+3. **Reverse conduction.** A FET channel is symmetric — with the gate on, current flows
+   drain-to-source and source-to-drain equally well, which is exactly why a JFET works
+   as an analogue switch. Treating negative Vds as cutoff is an easy mistake to make and
+   an expensive one, because an audio signal spends half of every cycle there.
+   Simulators handle it by swapping the two terminals and evaluating the forward law at
+   the swapped operating point.
+4. **Temperature.** Germanium leakage current flows out through the base bias resistor
+   and therefore *sets* the operating point. Model the leakage and thermal drift comes
+   for free; omit it and germanium behaves like silicon with a lower turn-on.
+5. **Part-to-part spread.** A datasheet gain range of 100 to 300 is not a modeling
+   footnote — it is the reason two pedals built from the same schematic sound different.
+   A model that uses the typical value describes a transistor that does not exist.
+6. **Aliasing.** Any nonlinearity generates harmonics above the Nyquist frequency. At a
+   fixed audio-rate timestep those fold back down as inharmonic content. This is a
+   *sampling* artefact with no analogue in the physical device, and it is the one error
+   on this list that gets worse the harder you drive the circuit.
 
-This is the thing most likely to surprise someone reading the code for the first time.
+### The real-time compromise
 
-| | TS `reference-runtime.ts` | C++ `WhiteBoxEngine.cpp` |
+Offline simulation and real-time simulation are the same mathematics under opposite
+constraints.
+
+| | Offline SPICE | Real-time audio |
 |---|---|---|
-| BJT law | Ebers-Moll transport | Ebers-Moll **plus** knee currents, recombination currents, forward and reverse Early voltage |
-| Junction capacitance | none | Cbe/Cbc with junction potential, grading, forward-bias coefficient; fixed-linear or charge-based mode |
-| Noise | none | per-junction shot noise with its own PRNG state |
-| Specimen drift | none | `specimenThermalDriftAmount` / `specimenThermalState` |
-| JFET vs MOSFET | **one law** (`kind: "fet"`) | **two structs** — `MnaJfet` (gate junctions, gate capacitances, shot noise) and `MnaMosfet` (insulated gate, no DC gate current) |
+| Timestep | Adaptive, microseconds down to nanoseconds, controlled by local truncation error | **Fixed** — one audio sample, ~22.7 µs at 44.1 kHz |
+| Iterations | Iterate until convergence, effectively unbounded | **Bounded** — must finish this sample before the next one is due |
+| Precision | double | often single |
+| Failure mode | takes longer, or reports non-convergence | **audible dropout** |
 
-The TypeScript path is the reference candidate measured against the ngspice oracle. The
-C++ path is what ships in the browser. The shipping path is the *richer* one — so a
-parity number measured against the reference runtime is a floor, not a description of
-what a listener hears.
+The fixed timestep is the deep one. Offline, a simulator detects a fast switching edge
+and shrinks its step by three orders of magnitude to resolve it. Real-time cannot: the
+step is the sample period, always, whether the circuit is idling or slamming into
+saturation. Every fast edge is therefore under-resolved by construction.
 
-### What real-time costs
+Given that, there are only three levers, and each one trades against the others:
 
-| Constraint | Value | Where it bites |
-|---|---|---|
-| Timestep | fixed, 1 audio sample (~22.7 µs @ 44.1 kHz) | no adaptive refinement through a switching edge |
-| Newton iterations | hard cap ≤ 24/sample, typically 1–8 | multi-transistor stages; a Big Muff has four |
-| Precision | float32 in WASM | `exp()` is clamped at an argument of 60 |
-| Matrix size | ≤ 48 unknowns per loaded program | caps how much circuit can surround the transistors |
+- **Fewer iterations.** Cheap, and the error shows up as a lagging or smeared
+  nonlinearity — worst on transients, exactly where the ear is most sensitive.
+- **Simpler model.** Drop from rung 3 to rung 2. Cheap and predictable, and what you
+  lose is level- and frequency-dependent detail rather than gross character.
+- **Oversampling.** Run the solve at 2×, 4× or 8× rate. Directly attacks aliasing and
+  partially restores edge resolution, at linear cost in CPU plus filter latency.
 
-**Junction limiting is not optional.** Three limiters exist — `limitJunction` for BJT
-junctions, `limitFetGate`, and `limitFetDrain` — because an undamped exponential
-overshoots and never returns.
+Realism, then, is not a single number. It is a position on the rung ladder, plus a
+statement of which of the six leaks you have plugged, plus the sample rate you did it
+at. Any claim of accuracy that does not say all three is not saying much.
 
-And limiting has its own failure mode, which is worth an article of its own. The drain
-limiter is applied *only in conduction*, because clamping below cutoff deadlocks the
-solve outright: `limitFetDrain`'s lower branch is `max(next, −0.5)`, so once history
-reaches −0.5 and the true drain is below it, the clamp returns −0.5 forever. The iterate
-is then **stationary and flagged limited at the same time**, and the convergence rule
-bars a limited iterate by construction. `boss-ge-7` held **95,988 of 96,000 samples** on
-exactly that, reporting `delta = 1.175e-16, limited = true` — a converged answer,
-refused. ngspice solves the same circuit to 9.410 × 10⁻² RMS.
+### A note on what "verified" means
 
-### Where the parity currently lands
+It is common to validate a real-time model against an offline SPICE simulation, and that
+is worth doing — SPICE is reproducible, well understood, and far more accurate than any
+real-time solver. But it is a *reference*, not ground truth. Both simulators sit on the
+same rung ladder, and both are below the bench.
 
-Transistor-heavy circuits are the loosest tier in the whole corpus:
-
-| Circuit class | correlation | normalised RMS | gain ratio |
-|---|---|---|---|
-| Aggressive nonlinear (big-muff-pi) | > 0.90 | < 0.45 | up to 1.75 |
-| High-gain fuzz / multi-BJT (ds-1, ts808) | > 0.92 | < 0.55 | ≥ 0.45 |
-| Bias-starved / extreme drive | > 0.4–0.8 | < 0.65–0.80 | wide |
-
-The weakest axis is **level, not shape**. Correlation stays high while the gain ratio
-band stays wide. And the reference is ngspice, not hardware — SPICE agreement is
-necessary evidence, never proof of a real-device match.
+Agreement with SPICE is necessary evidence. Only agreement with a measured device is
+proof, and that requires a specific specimen at a specific temperature — which brings
+leak 5 back around, because the specimen you measure is not the specimen in the
+listener's pedal.
 
 ---
 
 ## Visualization
 
-1. **Output characteristic family with a draggable bias point.** Ic against Vce, one
-   curve per base current, load line overlaid. This is the plot that makes bias legible:
-   a mis-biased stage should *look* wrong before it sounds wrong.
-2. **The reverse quadrant, drawn.** Most textbook FET plots stop at Vds = 0. Drawing
-   the negative-Vds half — and showing the terminal swap that produces it — is the
-   visualization of the `boss-hm-2` bug, and nobody else publishes it.
-3. **Parameter spread as a band, not a line.** 2N5457's β min/typ/max spans a factor of
-   720; BC549's β spans 100–300. Show the band the real part occupies next to the single
-   number the model uses. This is why two pedals off the same bench differ.
-4. **Germanium leakage against temperature**, with the bias point moving as a
-   consequence. The mechanism, not just the symptom.
+Four plots that make the above legible, in the order they teach best.
+
+1. **Output characteristic family with a draggable load line.** Ic against Vce, one curve
+   per base current, with the bias point where the load line crosses. Move the bias
+   resistor and watch the point slide from starved to centred to saturated. This is the
+   plot that makes bias a *thing you can see* rather than a number in a netlist.
+2. **Newton-Raphson walking to a solution.** The device I–V curve, the load line, and the
+   tangent lines the solver actually constructs, iteration by iteration. Then turn the
+   limiter off and watch it fly off the chart. This is the best available explanation of
+   why convergence aids exist.
+3. **The reverse quadrant, drawn.** Most textbook FET plots stop at Vds = 0. Extending
+   the axis into negative Vds — and showing the terminal swap that produces the mirrored
+   curve — makes leak 3 obvious in one picture.
+4. **Parameter spread as a band, not a line.** Plot the min/typ/max gain envelope a real
+   part occupies, with the single typical-value curve inside it. The band is the honest
+   picture; the line is what models use.
 
 ---
 
 ## Audio simulation
 
-One DI guitar take, held constant across every comparison.
+One guitar take, held constant across every comparison, so the only variable is the
+model.
 
-1. **Germanium against silicon** in a Fuzz Face, with leakage modelled and then zeroed —
-   so the reader hears what the leakage term is actually worth.
-2. **Bias swept live**, from starved to centred. Bias is the least visual and most
-   audible parameter a transistor stage has.
-3. **β varied across its real registry spread** on one part number, demonstrating
-   part-to-part variation as an audible fact rather than a forum claim.
-4. **Reverse conduction on and off** — the `boss-hm-2` bug as an A/B. A ten-times level
-   error is not a subtlety, and hearing it makes the case for terminal-level modelling
-   better than any correlation number.
-
----
-
-## What the review found
-
-Five gaps, in the order they should be fixed.
-
-### 1. JFET and MOSFET source parameters are discarded
-
-`netlist.ts` has a `bjt` block that reads SPICE model cards — `Type`/`Polarity`, `IS`,
-`BF`, `BR`, `LeakageCurrent` — into device parameters. **There is no `jfet` or `mosfet`
-block.** So every FET in the v2 corpus reaches `device-laws.ts` with no parameters and
-takes the class defaults: `thresholdVolts = ∓2`, `transconductance = 1e-3`.
-
-Verified in the generated catalog: every `"kind":"fet"` stamp in
-`generated-v2-packet-catalog.ts` reads
-`{"channelLengthModulation":0,"thresholdVolts":-2,"transconductance":0.001}`. Every
-JFET in the shipped v2 catalog is the same generic device.
-
-This is the identical bug that BJTs had and that was already fixed. That fix is
-documented with its cost: before it, all **385** corpus transistors were stamped as one
-silicon NPN with β = 100 and IS = 1e-14, though **43 declare `Type: PNP`** and 17 more
-declare `Polarity` with no `Type`. On `sola-sound-tone-bender-professional-mkii`, Q1 is
-a germanium PNP declaring IS = 1 nA, BF = 70, BR = 2: `Vbe = Vt·ln(Ic/Is)` at 1 mA is
-**0.345 V declared against 0.633 V at the silicon default**, so a germanium bias network
-modelled as silicon never reaches turn-on and the pedal renders near-silence.
-
-The FET version of that story has not been written yet, because the FET version of that
-fix has not happened.
-
-### 2. Channel-length modulation is thrown away
-
-`device-laws.ts` hardcodes `channelLengthModulation: 0` for both JFET and MOSFET. The
-runtime implements λ correctly in both the triode and saturation branches, and the
-registry *has the data* — 2N5457 carries `lambda: 0.003`. The parameter is measured,
-plumbed at both ends, and zeroed in the middle.
-
-### 3. The v2 compiler cannot see the registries at all
-
-`src/compiler/` and `src/runtime/` contain no reference to any
-`web/assets/registry/component-*-chips.json`. The registries are read only by
-`src/web/` — the CircuitDocument part-profile layer and the playback catalog. So the
-20 JFET rows and 70 BJT rows are real data that the v2 law resolver never consults; it
-is fed by packet properties or nothing.
-
-### 4. JFET and MOSFET collapse to one law in the compiler
-
-`device-laws.ts` emits `kind: "fet"` for both, differing only in the sign of the default
-threshold. The C++ engine keeps them distinct — `MnaJfet` has gate junctions,
-gate-source/gate-drain capacitances and shot noise; `MnaMosfet` is insulated-gate with
-no DC gate current. A MOSFET routed through the TypeScript path loses the distinction
-that defines it.
-
-There is also no `component-mosfet-chips.json`, so MOSFETs have no registry rows at all.
-
-### 5. Doc drift
-
-`docs/audio-simulation-realism/transistor-modeling-fidelity.md` links
-`web/assets/registry/microblock-bjt-chips.json`. The file is
-`component-bjt-chips.json`.
+1. **Germanium against silicon** in the same fuzz circuit — then germanium again with the
+   leakage term zeroed, so the leak is audible as its own contribution rather than as
+   part of a part swap.
+2. **Bias swept live**, starved to centred. Bias is the least visual and most audible
+   parameter a transistor stage has, and hearing the sweep teaches more than any plot.
+3. **Rung 2 against rung 3** on the same circuit — Ebers-Moll against Gummel-Poon — with
+   the CPU cost of each shown. This is the tradeoff of the whole article, made audible.
+4. **Reverse conduction on and off.** A ten-times level error is not a subtlety, and
+   hearing it makes the case for terminal-level modeling better than any correlation
+   score.
+5. **Oversampling off, 2×, 8×** on a hard-driven stage, so aliasing is heard as the
+   inharmonic grit it is rather than described.
 
 ---
 
-## Registry inventory
+## Where the models come from
 
-| Class | File | Rows | Notable |
-|---|---|---|---|
-| BJT | `component-bjt-chips.json` | 70 | 27 PNP, 7 germanium (AC128, OC44, OC75, 2G381, 2N2614, OC71, 2N404A), 5 with leakage, 1 Darlington (MPSA13) |
-| JFET | `component-jfet-chips.json` | 20 | J201, 2N5457, MPF102, 2SK30A…; carries `beta`, `thresholdVoltageMagnitude`, `lambda` |
-| MOSFET | — | 0 | law exists, registry does not |
+The compact models above are not folklore; they have papers, and reading them is the
+fastest way past this article.
 
-**Provenance lives one layer up.** The JSON registries carry bare numbers, but
-`.agents/skills/guitar-pedals/profiles/bjts.yaml` and `jfets.yaml` carry `status`,
-`usedIn` (which pedal, in what role), `terminalBehaviorNeeded`, `validation`
-requirements, and `sources.chipNotes` pointing at per-part notes. Any public device page
-should render from the YAML profile layer, not from the stripped JSON.
-
----
-
-## To do before this stops being a draft
-
-- [ ] State a measured error for one named transistor circuit, against a named reference
-- [ ] Decide whether the honest claim is per-part or per-family, given gap 1
-- [ ] Get one real JFET part's parameters through the compiler end to end (2N5457 or J201)
-- [ ] Confirm whether the C++ engine's Early voltage and knee currents are populated in shipped programs or left at their zero defaults
-- [ ] Pick the reference circuits: Fuzz Face (germanium BJT), Big Muff (cascade), a JFET boost
+- J. J. Ebers and J. L. Moll, "Large-Signal Behavior of Junction Transistors,"
+  *Proceedings of the IRE*, 1954.
+- H. K. Gummel and H. C. Poon, "An Integral Charge Control Model of Bipolar
+  Transistors," *Bell System Technical Journal*, 1970.
+- H. Shichman and D. A. Hodges, "Modeling and Simulation of Insulated-Gate
+  Field-Effect Transistor Switching Circuits," *IEEE Journal of Solid-State Circuits*,
+  1968.
+- C.-W. Ho, A. E. Ruehli and P. A. Brennan, "The Modified Nodal Approach to Network
+  Analysis," *IEEE Transactions on Circuits and Systems*, 1975.
+- L. W. Nagel, "SPICE2: A Computer Program to Simulate Semiconductor Circuits,"
+  UC Berkeley memorandum ERL-M520, 1975. The convergence-aid chapters are still the
+  clearest writing on the subject.

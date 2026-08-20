@@ -84,6 +84,74 @@ The consequences are worth dwelling on:
 That is the trade in one paragraph: the cheapest and most numerically stable op-amp model
 is also the one that erases the reason distortion pedals use op-amps.
 
+### How SPICE actually does it
+
+SPICE has **no op-amp primitive**. Its device list is resistors, capacitors, inductors,
+sources, diodes, BJTs, JFETs, MOSFETs, the four controlled sources, and `.SUBCKT`. Every
+op-amp model is a subcircuit assembled from those, so "how SPICE models an op-amp"
+really means "which subcircuit did the model's author choose." Four levels are in common
+use.
+
+**One controlled source.** A voltage-controlled voltage source is a complete op-amp
+model:
+
+```spice
+E1 out 0 inp inm 1e6
+```
+
+Infinite bandwidth, infinite swing, no input current. Rung 0–1, and it is what a great
+deal of filter simulation actually uses.
+
+**A controlled source plus an RC.** Add a pole and you have a gain-bandwidth product:
+
+```spice
+E1  1   0  inp inm  1e6      ; gain
+R1  1   2  1k                ; RC sets the dominant pole
+C1  2   0  159n              ; f_p = 1/(2*pi*R1*C1)
+E2  out 0  2   0    1        ; buffer
+```
+
+Still linear, still never clips. Rung 2.
+
+**The Boyle macromodel.** This is what people mean by "the SPICE op-amp model," and the
+classic 741 subcircuit is built this way. Three stages:
+
+- *Input stage* — an actual differential pair of BJTs with a tail current source. Real
+  transistors, not a controlled source. This is the clever choice, because input bias
+  current, offset voltage and the differential pair's own nonlinear transfer all come
+  for free, as does the mechanism for slew limiting.
+- *Gain stage* — a controlled source feeding a high-impedance node with the Miller
+  compensation capacitor across it. The dominant pole lives here.
+- *Output stage* — a controlled source, an output resistance, and **diodes clamping to
+  the supply rails**.
+
+Two behaviours *emerge* from that topology rather than being typed in as parameters, and
+both matter for real-time work:
+
+1. **Slew rate is not a parameter.** The tail current can only charge the compensation
+   capacitor so fast, so `SR = I_tail / C_comp`. Bandwidth and slew rate are therefore
+   *coupled* in the model exactly as they are in silicon — you cannot adjust one without
+   moving the other.
+2. **The clip has an exponential knee, not a corner**, because the limit is enforced by
+   diodes rather than by a hard rail. This is worth dwelling on: the smoothed knee a
+   real-time solver adopts for convergence reasons is not purely a numerical fudge. The
+   reference it gets compared against also has a soft knee, for physical reasons.
+
+Boyle's real contribution was a **fitting procedure**: the element values are computed
+from datasheet numbers — open-loop gain, gain-bandwidth product, slew rate, offset
+voltage, bias current, CMRR, output resistance, short-circuit current. A Boyle model is a
+curve-fit to a datasheet, not an extraction from a die. Two parts with identical
+datasheets get identical models.
+
+**Manufacturer and behavioral models.** Some vendors publish transistor-level netlists of
+the actual die; most ship a Boyle-style or proprietary macromodel instead. Simulators
+also offer behavioral routes — a level-switched universal op-amp, XSPICE code models, or
+nonlinear dependent sources used to write a limiting function directly.
+
+What none of the common models capture well: recovery from saturation (so the sputter on
+note decay is missing from the reference too), 1/f noise, CMRR and PSRR versus frequency,
+and temperature.
+
 ### The rung ladder
 
 | Rung | Model | What it buys | What it costs |
@@ -189,8 +257,9 @@ The levers, in the order they usually pay off:
 
 Comparing a real-time op-amp model against an offline SPICE run using the manufacturer's
 macromodel is good practice and worth doing. It is also comparing two models to each
-other. Manufacturer macromodels are themselves fitted approximations — typically Boyle-style
-macromodels, tuned to datasheet behaviour rather than derived from the die.
+other, and the section above says concretely what the other one is: a datasheet fit with
+a diode-shaped clip, a slew rate that is a side effect of two element values, and no
+saturation-recovery mechanism at all.
 
 Agreement with SPICE is necessary evidence. Only a bench measurement of a real chip on a
 real supply is proof, and even then it is proof about one specimen.

@@ -16,7 +16,7 @@ Sequenced by modeling difficulty, not by importance — each article assumes the
 | # | Article | Device class | Status |
 |---|---|---|---|
 | 01 | [Diodes](01-diodes.md) | Silicon, germanium, Schottky, LED, zener | placeholder |
-| 02 | [Op-amps](02-op-amps.md) | Macro-modelled gain blocks | placeholder |
+| 02 | [Op-amps](02-op-amps.md) | Ideal through macromodel gain blocks | draft |
 | 03 | [Transistors](03-transistors.md) | BJT, JFET, MOSFET | draft |
 | 04 | [Tubes](04-tubes.md) | Triodes, power tubes, rectifiers | placeholder |
 

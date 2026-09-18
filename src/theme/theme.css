@@ -1,0 +1,395 @@
+/*
+ * Shared Tailwind CSS v4 + daisyUI theme for the VesselDSP apps.
+ *
+ * VENDORED COPY. Upstream source of truth is the website monorepo's
+ * packages/ui-theme/src/theme.css (brand tokens: VesselDSP/docs/ui/theme.md and
+ * VesselDSP/docs/ui/colors.md). This repo is standalone, so the package is copied
+ * rather than imported as a workspace dependency -- see docs/site-architecture.md
+ * for how to re-sync it. Keep edits upstream; a divergence here is drift, not a fix.
+ */
+
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "vesseldsp";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: #ffffff;
+  --color-base-200: #f2f2f2;
+  --color-base-300: #e5e5e5;
+  --color-base-content: #1d1d1d;
+  --color-primary: #ff513a;
+  --color-primary-content: #1d1d1d;
+  --color-secondary: #1d1d1d;
+  --color-secondary-content: #ffffff;
+  --color-accent: #ff513a;
+  --color-accent-content: #1d1d1d;
+  --color-neutral: #1d1d1d;
+  --color-neutral-content: #ffffff;
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #16a34a;
+  --color-success-content: #1d1d1d;
+  --color-warning: #f59e0b;
+  --color-warning-content: #1d1d1d;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+
+  --border: 1px;
+
+  --depth: 0;
+  --noise: 0;
+}
+
+/*
+ * base-200 / base-300 are conventional derived elevation tones (not from theme.md,
+ * which only specifies base-100/white). accent reuses primary and info/success/warning/error
+ * use conventional unbranded colors, since theme.md's 4-color palette doesn't define these
+ * roles yet -- adjust here once/if the brand system is extended to cover them.
+ */
+
+:root {
+  --font-mono: "Space Mono", ui-monospace, monospace;
+  --font-grotesk: "Space Grotesk", ui-sans-serif, sans-serif;
+  /* Section surface + its contrasting foreground. Flat controls fill with `--ui-bg`;
+     the primary button inverts to `--ui-fg`. Both default to the page tokens and are
+     overridden per-section (e.g. sectionTheme output) so controls track the background. */
+  --ui-bg: var(--color-base-100);
+  --ui-fg: var(--color-base-content);
+}
+
+/*
+ * Smooth (iOS-like) scrolling with momentum, and no rubber-band overscroll / pull-to-refresh.
+ * `scroll-behavior: smooth` respects users who prefer reduced motion (handled below).
+ */
+html {
+  scroll-behavior: smooth;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/*
+ * Text selection: dark-gray highlight with the section background as the text color.
+ * On dark sections the consumer flips these vars (see the design-system playground) to a
+ * primary highlight with dark-gray text so the selection stays legible.
+ */
+::selection {
+  background-color: var(--selection-bg, var(--color-secondary));
+  color: var(--selection-fg, var(--ui-bg));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/*
+ * Default UI type is Space Mono, rendered UPPERCASE for the brand's technical voice.
+ * Long-form reading content should opt out via `.prose-reading` (Space Grotesk, sentence case).
+ */
+body {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+/*
+ * Form controls don't reliably inherit `text-transform` from `body`, so uppercase them
+ * explicitly. Placeholders inherit this from their control. `.prose-reading` still opts out.
+ */
+button,
+.btn,
+input,
+textarea,
+select,
+::placeholder {
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-grotesk);
+  font-weight: 700;
+  line-height: 1.1;
+  /* Headings use Space Grotesk and are uppercased to match the brand's technical voice. */
+  text-transform: uppercase;
+}
+
+/* Heading type scale (h1 = 92px), overridable per-element with Tailwind text-* utilities. */
+h1 {
+  font-size: 5.75rem;
+}
+
+h2 {
+  font-size: 4rem;
+}
+
+h3 {
+  font-size: 2.75rem;
+}
+
+h4 {
+  font-size: 2rem;
+}
+
+h5 {
+  font-size: 1.5rem;
+}
+
+h6 {
+  font-size: 1.125rem;
+}
+
+/*
+ * Reading type for blog/article body copy: Space Grotesk (sans-serif) in sentence case
+ * with relaxed line-height for readability. Opt in with `class="prose-reading"` on the
+ * article container -- it also restores natural case for any nested default (mono) text.
+ */
+.prose-reading,
+.prose-reading * {
+  font-family: var(--font-grotesk);
+  text-transform: none;
+}
+
+.prose-reading {
+  line-height: 1.7;
+}
+
+/*
+ * Flat controls: buttons and input fields have square corners and no color fill of
+ * their own -- they take the current section background (`--ui-bg`) so they blend in,
+ * with only a `currentColor` border. Text and border inherit `currentColor`, so they
+ * adapt to the section's background the same way the navbar does (see Navbar.tsx).
+ * `outline: none` removes daisyUI's offset focus/open outline, which otherwise stacks
+ * on the border and reads as a double border on `<select>`.
+ */
+.btn,
+.input,
+.textarea,
+.select {
+  border-radius: 0;
+  background-color: var(--ui-bg);
+  color: currentColor;
+  border-color: currentColor;
+  font-weight: 400;
+  outline: none;
+}
+
+/*
+ * Button hover: a hard (zero-blur) drop shadow in the section's dark tone (`--ui-fg`),
+ * offset down-right, for the flat/brutalist press affordance. The default state sets a
+ * matching zero-size shadow (same shape/color) so the transition can interpolate --
+ * otherwise it animates from daisyUI's differently-shaped depth shadow and jumps.
+ */
+.btn {
+  box-shadow: 0 0 0 0 var(--ui-fg);
+  transition: box-shadow 0.15s ease-out;
+}
+
+.btn:hover {
+  box-shadow: 4px 4px 0 0 var(--ui-fg);
+}
+
+/*
+ * The native select dropdown popup (rendered via `::picker(select)` in browsers that
+ * support customizable selects) matches the control: same `--ui-bg` fill and a
+ * `currentColor` border instead of daisyUI's fixed base-200 border.
+ */
+.select::picker(select) {
+  background-color: var(--ui-bg);
+  border-color: currentColor;
+  border-radius: 0;
+  /* Same hard drop shadow as button hover. */
+  box-shadow: 4px 4px 0 0 var(--ui-fg);
+}
+
+.select option {
+  border-radius: 0;
+}
+
+/* Square checkboxes with a dark (currentColor) border to match the flat control language. */
+.checkbox {
+  border-radius: 0;
+  border-color: currentColor;
+  /* Checkmark uses currentColor so it stays visible without a filled background. */
+  color: currentColor;
+}
+
+.checkbox:checked,
+.checkbox[aria-checked="true"] {
+  background-color: transparent;
+}
+
+/*
+ * Thin-line range: a hairline track (dark `currentColor` on the filled left, faded on the
+ * right) with a hollow circular thumb (section-bg fill, `currentColor` border). The filled
+ * portion is driven by `--range-val` (a percentage the consumer sets from the value) for
+ * WebKit; Firefox uses the native `::-moz-range-progress`.
+ */
+.range-line {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.range-line::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 0;
+  background: linear-gradient(
+    to right,
+    currentColor 0%,
+    currentColor var(--range-val, 50%),
+    color-mix(in oklab, currentColor 20%, transparent) var(--range-val, 50%),
+    color-mix(in oklab, currentColor 20%, transparent) 100%
+  );
+}
+
+.range-line::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  background: var(--ui-bg);
+  border: 1px solid currentColor;
+  margin-top: calc((2px - 1.25rem) / 2);
+}
+
+.range-line::-moz-range-track {
+  height: 2px;
+  background: color-mix(in oklab, currentColor 20%, transparent);
+}
+
+.range-line::-moz-range-progress {
+  height: 2px;
+  background: currentColor;
+}
+
+.range-line::-moz-range-thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  background: var(--ui-bg);
+  border: 1px solid currentColor;
+}
+
+/*
+ * Radio: dark (currentColor) border and dot; no background fill when checked
+ * (daisyUI otherwise fills the checked radio with base-100).
+ */
+.radio {
+  color: currentColor;
+  border-color: currentColor;
+}
+
+.radio:checked,
+.radio[aria-checked="true"] {
+  background-color: transparent;
+  border-color: currentColor;
+}
+
+/*
+ * Toggle: dark (currentColor) track/knob color and border in both states, overriding
+ * daisyUI's 50%-opacity default and any color variant (toggle-primary, etc.).
+ */
+.toggle {
+  --input-color: currentColor;
+  border-color: currentColor;
+}
+
+.toggle:checked,
+.toggle[aria-checked="true"],
+.toggle:has(> input:checked) {
+  --input-color: currentColor;
+  background-color: transparent;
+}
+
+/*
+ * Primary button is the inverse of the section: filled with the contrasting color
+ * (`--ui-fg` -- dark gray on a light/orange section, white on a dark section) with the
+ * section background as its label. Secondary/outline/ghost keep the flat base style.
+ */
+.btn-primary {
+  background-color: var(--ui-fg);
+  color: var(--ui-bg);
+  border-color: var(--ui-fg);
+}
+
+/* Disabled controls fade text + border toward the background (lighter, muted). */
+.btn:disabled,
+.btn[disabled],
+.input:disabled,
+.textarea:disabled,
+.select:disabled {
+  background-color: var(--ui-bg);
+  color: color-mix(in oklab, var(--ui-fg) 40%, var(--ui-bg));
+  border-color: color-mix(in oklab, var(--ui-fg) 40%, var(--ui-bg));
+}
+
+/*
+ * Marquee: horizontal auto-scroll that pauses on hover. The consumer renders the content
+ * twice (see Marquee.tsx); both groups share one keyframe and translate by their own width
+ * plus the inter-group gap for a seamless loop.
+ */
+.marquee {
+  display: flex;
+  gap: var(--marquee-gap, 2rem);
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.marquee__group {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--marquee-gap, 2rem);
+  min-width: max-content;
+  animation: marquee-scroll var(--marquee-duration, 20s) linear infinite;
+}
+
+.marquee[data-reverse="true"] .marquee__group {
+  animation-direction: reverse;
+}
+
+.marquee:hover .marquee__group {
+  animation-play-state: paused;
+}
+
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--marquee-gap, 2rem)));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee__group {
+    animation: none;
+  }
+}
+
+/* Pure black (#000000) is never used anywhere in this system -- #1d1d1d is black. */

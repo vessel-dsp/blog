@@ -1,0 +1,167 @@
+---
+title: "Buffer"
+date: "2026-09-15"
+excerpt: "The only pedal whose job is to do nothing to your signal — and the measurements showing what it stops happening to it."
+author: "VesselDSP"
+format: "visual"
+status: "draft"
+---
+
+A buffer is the one pedal that is supposed to leave your signal alone. Unity gain, in and
+out, nothing added. Every claim made for it is about something else: what your guitar
+*sees*.
+
+So the question is not what a buffer does to the signal. It is what the rest of the rig
+was doing to it already.
+
+<Figure
+  n={1}
+  label="A guitar is not a voltage source"
+  takeaway="A pickup is a coil: six kilohms of wire with 2.3 henries of inductance behind it, and capacitance across it. An inductor and a capacitor in the same network resonate — which is why the response below has a peak in it at all, and why the thing that kills the peak is capacitance you added by accident."
+>
+  <PickupModel />
+</Figure>
+
+That inductance is the whole problem. A resistor's impedance is the same at every
+frequency; an inductor's climbs with it. This pickup looks like 6 kΩ to a low E and about
+145 kΩ at 10 kHz. It is a weak source exactly where the detail lives.
+
+## The cable is a capacitor
+
+Instrument cable runs about 100 pF per metre — real ones land between 60 and 150. That
+capacitance sits across the pickup, and with the coil's inductance it sets where the
+resonance lands:
+
+<Figure
+  n={2}
+  label="Drag the cable out and watch the peak move"
+  takeaway="Adding cable does not tilt the response down. It drags the resonant peak leftwards, taking everything above it along. Drop the load impedance instead and something different happens: the peak flattens out and the whole curve sinks. The dotted line, when it appears, is the same circuit measured through the simulation engine rather than computed."
+>
+  <ResponseExplorer />
+</Figure>
+
+In a typical unbuffered pedalboard rig, cable lengths accumulate fast. A standard 3 m (10 ft)
+guitar lead, a few 15 cm (or 30 cm) true-bypass patch cables between pedals, and a 3 m run
+from the board to the amp add up to roughly **6 metres** of wire. When every pedal is bypassed,
+all 600 pF sits directly across the pickup's coil.
+
+Comparing a direct 1 m studio cable against that full 6 m unbuffered rig into a 1 MΩ amp input,
+measured through the engine:
+
+| | Resonance | Peak | 200 Hz | 5 kHz | 10 kHz |
+|---|---|---|---|---|---|
+| 1 m cable, 1 M load | 6,875 Hz | +15.75 dB | −0.05 dB | +5.9 dB | −4.9 dB |
+| 6 m cable, 1 M load | 3,875 Hz | +15.81 dB | −0.03 dB | +1.7 dB | −18.7 dB |
+| 6 m cable, 10 k load | none | — | −4.22 dB | −17.9 dB | −25.9 dB |
+| Buffered, 6 m after it | 7,450 Hz | +7.70 dB | −0.24 dB | +3.4 dB | −2.1 dB |
+
+Two things in that table are worth stopping on.
+
+**The peak does not shrink when you add cable — it moves.** Both 1 MΩ rows peak at the
+same height, within six hundredths of a decibel. Fourteen decibels go missing at 10 kHz,
+and none of it is "the cable damping your pickup". The cable retuned the resonance from
+6.9 kHz down to 3.9 kHz, and everything above the new peak fell off the edge.
+
+**Nor does it make you quieter.** Through the same guitar take, the 6 m render is actually
+*louder* than the 1 m one, by 0.7 dB, because the peak moved into the part of the spectrum
+where a guitar keeps its energy. Tone suck is not a volume drop. It is a redistribution,
+and the reason it reads as "lifeless" rather than "quiet".
+
+The volume drop is a different mechanism, and it needs a low-impedance load — the 10 kΩ
+row. That one costs 4.2 dB at 200 Hz, flattens the resonance into nothing, and takes 5.2 dB
+off the take overall.
+
+<Figure
+  n={3}
+  label="The same eight seconds, five ways"
+  takeaway="Every clip is the same DI take rendered through the real circuit — the cable, the load and the buffer are all simulated as components, not as EQ. Switching is gapless and the levels are untouched, so the quiet clip is quiet for the reason the table says it is."
+>
+  <AudioCompare />
+</Figure>
+
+## What the buffer actually changes
+
+<Figure
+  n={4}
+  label="An emitter follower, and the two numbers it exists to set"
+  takeaway="Unity gain — the measured figure is −0.08 dB — and it is the two 1 M bias resistors, not the transistor, that set what the guitar sees. The transistor's contribution is the other end: it turns a 400 kΩ input into a 100 Ω output that can drive cable without caring."
+>
+  <BufferSchematic />
+</Figure>
+
+The buffer does not remove the cable's capacitance. Six hundred picofarads is still there,
+still hanging off the wire. What changed is what is driving it: about 100 Ω of emitter
+follower instead of a resonant coil. Six hundred picofarads against 100 Ω puts the rolloff
+at roughly **2.6 MHz** — seven octaves above the top of your hearing, where the same
+capacitance hanging off the pickup put the resonance at 3.9 kHz.
+
+That is the entire trick. A buffer does not protect your signal from the cable. It moves
+the cable to the side of the circuit where capacitance costs nothing.
+
+<Figure
+  n={5}
+  label="Impedance, on one axis"
+  takeaway="The rule of thumb is that a load should be at least ten times the source driving it. The guitar is the awkward case: not a point on this axis but a range, sliding well over a decade to the right as the notes go up — which is why a load that is comfortably fine at 200 Hz is not fine at 5 kHz."
+>
+  <ImpedanceLadder />
+</Figure>
+
+## A buffer is a load too
+
+Look again at the buffered row in the table. The resonance comes back up — 7,450 Hz, higher
+than the 1 m cable managed — but the peak is +7.7 dB where the unbuffered circuit had
++15.8 dB. Half the peak is gone.
+
+That is not a subtlety, it is the bias network. Two 1 MΩ resistors from the supply and to
+ground look like 500 kΩ in parallel to the incoming signal, and once the transistor's own
+input is counted the guitar sees about 400 kΩ. That resistance sits across the resonance
+and damps it. The buffer restored *where* the pickup resonates and charged 8 dB of *how
+much* for it.
+
+If you want that peak back, the fix is in the bias network — higher resistors, or
+bootstrapping it so the signal moves both ends of the divider at once — not in the
+transistor. Which is the useful way to read the whole post: **a buffer is not a null
+operation, it is a deliberate choice of load.** Anyone selling you one whose input
+impedance they will not tell you is selling you a tone control.
+
+And sometimes the load you want is a terrible one. A vintage fuzz's 10 kΩ input, loading
+the pickup hard, *is* the sound of that pedal — it is the reason a Fuzz Face cleans up
+when you roll the guitar volume back. Put a buffer in front of it and you have removed the
+interaction the circuit was designed around. The 10 kΩ row is not a fault. It is a feature
+somebody chose in 1966.
+
+## What this cost to compute
+
+Everything above came out of the simulation engine, which solves the circuit once per
+sample at 48 kHz. That is a compromise, and it has a size:
+
+<Figure
+  n={6}
+  label="Where the engine departs from the circuit"
+  takeaway="Below about 2.5 kHz the real-time engine and the exactly-solved circuit agree to within 0.02 dB. At the resonance they do not: at 48 kHz the engine puts the peak 515 Hz low, a little over a semitone. The height does not move at all — 15.75 dB at every rate measured. It is the frequency that sampling gets wrong, and raising the rate walks it back."
+>
+  <SamplingWarp />
+</Figure>
+
+This is the trade the whole engine is built around. A resonance at 7 kHz is a seventh of
+the way to Nyquist at 48 kHz, and discrete time is worst exactly there. Run at 96 kHz and
+the error drops from 515 Hz to 140 Hz; at 192 kHz it is 40 Hz, and at 384 kHz it is down
+to 15 Hz — the width of the measurement's own grid. Every one of those steps costs
+proportionally more CPU for a difference that, by 96 kHz, is already smaller than the
+variation between two pickups off the same winder.
+
+Realism first, compromised to real-time — in that order, with the compromise stated.
+
+## What is under this post
+
+The four circuits are `.vdsp` files in [`content/circuits/`](https://github.com/vessel-dsp/blog/tree/main/content/circuits):
+a pickup model, two cable lengths, two loads and a 2N3904 emitter follower on a 9 V supply.
+They were compiled and run through the VesselDSP engine's reference runtime; the curves are
+sine-sweep measurements of that runtime, not curves drawn to illustrate a point.
+
+The honest ceiling: **this engine is validated against ngspice, not against a bench.** SPICE
+agreement is necessary evidence and never proof of a real-device match, and nothing here has
+been checked against a real pickup, a real cable, or a real buffer with a meter on it. The
+pickup values are typical single-coil figures rather than a measured specimen. Treat the
+shapes and the mechanisms as sound, and the absolute numbers as belonging to a modelled
+guitar rather than yours.

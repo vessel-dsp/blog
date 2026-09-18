@@ -1,0 +1,225 @@
+schema: circuit-interchange/v3
+audio:
+  input: V1
+  output: O1
+  bypass: none
+metadata:
+  name: "Pickup, 6 m cable, 10 k load"
+  description: "The same pickup and 6 m cable into a 10 k input, the order of a vintage fuzz's input impedance. The load now damps the pickup's resonance as well as rolling it off."
+source:
+  format: vdsp
+  version: "blog-buffer-article"
+components:
+  - id: V1
+    kind: jack
+    name: Input
+    sourceTypeName: Circuit.Input
+    origin:
+      x: -320
+      y: 80
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: tip
+        node: 1
+        position:
+          x: -320
+          y: 60
+      - name: cathode
+        role: sleeve
+        node: 0
+        position:
+          x: -320
+          y: 100
+    properties:
+      V0dBFS: "1 V"
+      Name: "Input"
+      Role: "input"
+  - id: GND1
+    kind: ground
+    name: GND1
+    sourceTypeName: Circuit.Ground
+    origin:
+      x: -320
+      y: 150
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: terminal
+        role: ground
+        node: 0
+        position:
+          x: -320
+          y: 150
+    properties:
+      Name: "GND1"
+  - id: RDC
+    kind: resistor
+    name: RDC
+    sourceTypeName: Circuit.Resistor
+    origin:
+      x: -220
+      y: 60
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: end
+        node: 1
+        position:
+          x: -240
+          y: 60
+      - name: cathode
+        role: end
+        node: 2
+        position:
+          x: -200
+          y: 60
+    properties:
+      Resistance: "6k"
+      Name: "RDC"
+      Description: "Pickup DC winding resistance, single-coil typical."
+  - id: LP
+    kind: inductor
+    name: LP
+    sourceTypeName: Circuit.Inductor
+    origin:
+      x: -120
+      y: 60
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: end
+        node: 2
+        position:
+          x: -140
+          y: 60
+      - name: cathode
+        role: end
+        node: 3
+        position:
+          x: -100
+          y: 60
+    properties:
+      Inductance: "2.3"
+      Name: "LP"
+      Description: "Pickup coil inductance, single-coil typical."
+  - id: CC
+    kind: capacitor
+    name: CC
+    sourceTypeName: Circuit.Capacitor
+    origin:
+      x: -20
+      y: 110
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: end
+        node: 3
+        position:
+          x: -20
+          y: 90
+      - name: cathode
+        role: end
+        node: 0
+        position:
+          x: -20
+          y: 130
+    properties:
+      Capacitance: "700p"
+      Name: "CC"
+      Description: "100 pF pickup winding capacitance plus the cable's, at 100 pF per metre."
+  - id: RL
+    kind: resistor
+    name: RL
+    sourceTypeName: Circuit.Resistor
+    origin:
+      x: 60
+      y: 110
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: end
+        node: 3
+        position:
+          x: 60
+          y: 90
+      - name: cathode
+        role: end
+        node: 0
+        position:
+          x: 60
+          y: 130
+    properties:
+      Resistance: "10k"
+      Name: "RL"
+      Description: "A vintage-fuzz-order input impedance, low enough to load the pickup heavily."
+  - id: O1
+    kind: jack
+    name: Output
+    sourceTypeName: Circuit.Speaker
+    origin:
+      x: 140
+      y: 90
+    rotation: 0
+    flipped: false
+    terminals:
+      - name: anode
+        role: tip
+        node: 3
+        position:
+          x: 140
+          y: 70
+      - name: cathode
+        role: sleeve
+        node: 0
+        position:
+          x: 140
+          y: 110
+    properties:
+      Impedance: "infinite"
+      Name: "Output"
+      Role: "output"
+nodes:
+  - id: 0
+    role: ground
+    members:
+      - componentId: V1
+        terminalName: cathode
+      - componentId: GND1
+        terminalName: terminal
+      - componentId: CC
+        terminalName: cathode
+      - componentId: RL
+        terminalName: cathode
+      - componentId: O1
+        terminalName: cathode
+  - id: 1
+    role: signal
+    members:
+      - componentId: V1
+        terminalName: anode
+      - componentId: RDC
+        terminalName: anode
+  - id: 2
+    role: signal
+    members:
+      - componentId: RDC
+        terminalName: cathode
+      - componentId: LP
+        terminalName: anode
+  - id: 3
+    role: signal
+    members:
+      - componentId: LP
+        terminalName: cathode
+      - componentId: CC
+        terminalName: anode
+      - componentId: RL
+        terminalName: anode
+      - componentId: O1
+        terminalName: anode
